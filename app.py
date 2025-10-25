@@ -1,5 +1,5 @@
 # =========================================================
-# STREAMLIT APP: Supply Chain Replenishment Dashboard (Final Version)
+# STREAMLIT APP: Supply Chain Replenishment Dashboard (Final + Realistic)
 # =========================================================
 
 import streamlit as st
@@ -18,11 +18,11 @@ model = joblib.load("replenishment_model.pkl")
 # Helper Functions
 # ---------------------------------------------------------
 def map_qualitative_inputs(criticality, cost, rating):
+    # Convert categorical manager inputs to numeric scales
     criticality_map = {"Low": 1, "Moderate": 3, "High": 5}
     cost_map = {"Low": 300, "Moderate": 1000, "High": 1800}
     rating_map = {"Low": 4, "Moderate": 7, "High": 9}
     return criticality_map[criticality], cost_map[cost], rating_map[rating]
-
 
 def business_interpretation(pred):
     if pred < 400:
@@ -32,9 +32,8 @@ def business_interpretation(pred):
     else:
         return "High demand — prioritize procurement and buffer stock."
 
-
 def generate_past_demand(item_id):
-    np.random.seed(int(item_id[-2:]) * 3)
+    np.random.seed(hash(item_id) % (2**32))
     months = pd.date_range(end=pd.Timestamp.today(), periods=12, freq="M")
     base = np.random.randint(300, 800)
     variation = np.random.normal(0, 40, 12)
@@ -43,7 +42,6 @@ def generate_past_demand(item_id):
         "Past Demand": np.maximum(base + variation, 0).round(0).astype(int)
     })
     return data
-
 
 def forecast_demand(df):
     df = df.reset_index(drop=True)
@@ -55,7 +53,6 @@ def forecast_demand(df):
     future_months = pd.date_range(df["Month"].iloc[-1] + pd.offsets.MonthBegin(), periods=3, freq="M")
     forecast_df = pd.DataFrame({"Month": future_months, "Forecasted Demand": forecast})
     return forecast_df
-
 
 # ---------------------------------------------------------
 # Page Configuration
@@ -85,8 +82,17 @@ st.divider()
 # ---------------------------------------------------------
 col1, col2 = st.columns(2)
 
+# Realistic semiconductor spare part list
+part_list = [
+    "IC-Controller-XT150", "MOSFET-Power-Transistor", "Capacitor-47uF-16V",
+    "Resistor-220ohm-SMD", "Microchip-ATMega328", "Diode-Schottky-SS14",
+    "Crystal-Oscillator-16MHz", "Connector-USB-TypeC", "Transistor-BC547",
+    "Voltage-Regulator-LM7805", "Sensor-Thermal-TMP36", "LED-Green-5mm",
+    "Relay-5V-DC", "Display-LCD-16x2", "Switch-Tactile-SPST"
+]
+
 with col1:
-    item_id = st.selectbox("Material / Part ID", [f"P{str(i).zfill(3)}" for i in range(1, 101)])
+    item_id = st.selectbox("Select Material / Component", part_list)
     past_demand = st.number_input("Recent Monthly Consumption (units)", 50, 2000, 600, step=50)
     lead_time = st.radio("Supplier Delivery Speed", ["Fast", "Average", "Slow"])
     service = st.radio("Target Service Level", ["90% - Basic", "95% - Standard", "99% - Premium"])
@@ -118,7 +124,7 @@ fig.update_layout(
     plot_bgcolor="#111418", paper_bgcolor="#111418",
     font=dict(color="white")
 )
-fig.update_yaxes(tickformat="d")  # show integer ticks
+fig.update_yaxes(tickformat="d")
 st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
