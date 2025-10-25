@@ -1,5 +1,5 @@
 # =========================================================
-# STREAMLIT APP: Supply Chain Replenishment Dashboard (Final + Realistic)
+# STREAMLIT APP: Supply Chain Replenishment Dashboard (Final + Confidence Level)
 # =========================================================
 
 import streamlit as st
@@ -8,6 +8,7 @@ import numpy as np
 import joblib
 import plotly.express as px
 from sklearn.linear_model import LinearRegression
+from scipy.stats import norm  # for dynamic confidence levels
 
 # ---------------------------------------------------------
 # Load trained model
@@ -18,13 +19,14 @@ model = joblib.load("replenishment_model.pkl")
 # Helper Functions
 # ---------------------------------------------------------
 def map_qualitative_inputs(criticality, cost, rating):
-    # Convert categorical manager inputs to numeric scales
+    """Convert categorical manager inputs to numeric scales."""
     criticality_map = {"Low": 1, "Moderate": 3, "High": 5}
     cost_map = {"Low": 300, "Moderate": 1000, "High": 1800}
     rating_map = {"Low": 4, "Moderate": 7, "High": 9}
     return criticality_map[criticality], cost_map[cost], rating_map[rating]
 
 def business_interpretation(pred):
+    """Simple qualitative recommendation based on predicted demand."""
     if pred < 400:
         return "Low consumption — maintain standard reorder cycle."
     elif pred < 700:
@@ -33,6 +35,7 @@ def business_interpretation(pred):
         return "High demand — prioritize procurement and buffer stock."
 
 def generate_past_demand(item_id):
+    """Generate synthetic 12-month demand pattern for visualization."""
     np.random.seed(hash(item_id) % (2**32))
     months = pd.date_range(end=pd.Timestamp.today(), periods=12, freq="M")
     base = np.random.randint(300, 800)
@@ -44,6 +47,7 @@ def generate_past_demand(item_id):
     return data
 
 def forecast_demand(df):
+    """Create a simple linear regression forecast for the next 3 months."""
     df = df.reset_index(drop=True)
     X = np.arange(len(df)).reshape(-1, 1)
     y = df["Past Demand"]
@@ -148,6 +152,13 @@ avg_uptime_percent = uptime_map[uptime]
 # Prediction and KPI Calculations
 # ---------------------------------------------------------
 if st.button("Run Analysis and Predict Replenishment"):
+    
+    # Confidence level selector (for safety stock)
+    confidence_level = st.slider("Select Confidence Level for Safety Stock (%)", 80, 99, 95, step=1)
+    z_value = round(norm.ppf(confidence_level / 100), 2)
+    st.write(f"Confidence Level: **{confidence_level}%**,  Z-Value: **{z_value}**")
+
+    # Model Input Data
     input_data = pd.DataFrame({
         "past_demand": [past_demand],
         "lead_time_days": [lead_time_days],
@@ -164,7 +175,6 @@ if st.button("Run Analysis and Predict Replenishment"):
 
     # Safety Stock and Reorder Point
     demand_std = past_data["Past Demand"].std()
-    z_value = {90: 1.28, 95: 1.65, 99: 2.33}[service_level]
     safety_stock = int(round(z_value * demand_std * np.sqrt(lead_time_days / 30)))
     reorder_point = int(round((past_demand * (lead_time_days / 30)) + safety_stock))
 
