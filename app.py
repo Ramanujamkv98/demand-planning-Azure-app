@@ -1,5 +1,5 @@
 # =========================================================
-# STREAMLIT APP: Supply Chain Replenishment Dashboard
+# STREAMLIT APP: Supply Chain Replenishment Dashboard (Final Version)
 # =========================================================
 
 import streamlit as st
@@ -23,6 +23,7 @@ def map_qualitative_inputs(criticality, cost, rating):
     rating_map = {"Low": 4, "Moderate": 7, "High": 9}
     return criticality_map[criticality], cost_map[cost], rating_map[rating]
 
+
 def business_interpretation(pred):
     if pred < 400:
         return "Low consumption — maintain standard reorder cycle."
@@ -31,6 +32,7 @@ def business_interpretation(pred):
     else:
         return "High demand — prioritize procurement and buffer stock."
 
+
 def generate_past_demand(item_id):
     np.random.seed(int(item_id[-2:]) * 3)
     months = pd.date_range(end=pd.Timestamp.today(), periods=12, freq="M")
@@ -38,21 +40,22 @@ def generate_past_demand(item_id):
     variation = np.random.normal(0, 40, 12)
     data = pd.DataFrame({
         "Month": months,
-        "Past Demand": np.maximum(base + variation, 0).round(0)
+        "Past Demand": np.maximum(base + variation, 0).round(0).astype(int)
     })
     return data
 
+
 def forecast_demand(df):
-    # Simple linear regression to forecast next 3 months
     df = df.reset_index(drop=True)
     X = np.arange(len(df)).reshape(-1, 1)
     y = df["Past Demand"]
     model = LinearRegression().fit(X, y)
     future_X = np.arange(len(df), len(df) + 3).reshape(-1, 1)
-    forecast = model.predict(future_X)
+    forecast = np.maximum(model.predict(future_X), 0).round(0).astype(int)
     future_months = pd.date_range(df["Month"].iloc[-1] + pd.offsets.MonthBegin(), periods=3, freq="M")
     forecast_df = pd.DataFrame({"Month": future_months, "Forecasted Demand": forecast})
     return forecast_df
+
 
 # ---------------------------------------------------------
 # Page Configuration
@@ -99,7 +102,7 @@ cost = st.radio("Cost Category", ["Low", "Moderate", "High"], horizontal=True)
 supplier_rating = st.radio("Supplier Reliability", ["Low", "Moderate", "High"], horizontal=True)
 
 # ---------------------------------------------------------
-# Generate Time-Series Chart
+# Time-Series Demand Visualization
 # ---------------------------------------------------------
 past_data = generate_past_demand(item_id)
 forecast_df = forecast_demand(past_data)
@@ -115,12 +118,13 @@ fig.update_layout(
     plot_bgcolor="#111418", paper_bgcolor="#111418",
     font=dict(color="white")
 )
+fig.update_yaxes(tickformat="d")  # show integer ticks
 st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 
 # ---------------------------------------------------------
-# Mapping and Prediction Logic
+# Convert Inputs and Run Model
 # ---------------------------------------------------------
 lead_time_map = {"Fast": 7, "Average": 15, "Slow": 30}
 service_map = {"90% - Basic": 90, "95% - Standard": 95, "99% - Premium": 99}
@@ -135,10 +139,9 @@ seasonality_index = seasonality_map[seasonality]
 avg_uptime_percent = uptime_map[uptime]
 
 # ---------------------------------------------------------
-# Business Calculations: Safety Stock and Reorder Point
+# Prediction and KPI Calculations
 # ---------------------------------------------------------
 if st.button("Run Analysis and Predict Replenishment"):
-    # Model prediction
     input_data = pd.DataFrame({
         "past_demand": [past_demand],
         "lead_time_days": [lead_time_days],
@@ -151,19 +154,19 @@ if st.button("Run Analysis and Predict Replenishment"):
         "scrap_rate": [scrap_rate]
     })
 
-    predicted_qty = model.predict(input_data)[0]
+    predicted_qty = int(round(model.predict(input_data)[0]))
 
-    # Safety stock (simplified)
+    # Safety Stock and Reorder Point
     demand_std = past_data["Past Demand"].std()
     z_value = {90: 1.28, 95: 1.65, 99: 2.33}[service_level]
-    safety_stock = z_value * demand_std * np.sqrt(lead_time_days / 30)
-    reorder_point = (past_demand * (lead_time_days / 30)) + safety_stock
+    safety_stock = int(round(z_value * demand_std * np.sqrt(lead_time_days / 30)))
+    reorder_point = int(round((past_demand * (lead_time_days / 30)) + safety_stock))
 
     # KPI Summary
     kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Predicted Replenishment", f"{round(predicted_qty, 1)} units")
-    kpi2.metric("Safety Stock", f"{round(safety_stock, 1)} units")
-    kpi3.metric("Reorder Point", f"{round(reorder_point, 1)} units")
+    kpi1.metric("Predicted Replenishment", f"{predicted_qty} units")
+    kpi2.metric("Safety Stock", f"{safety_stock} units")
+    kpi3.metric("Reorder Point", f"{reorder_point} units")
 
     st.markdown("#### Business Recommendation")
     st.write(business_interpretation(predicted_qty))
