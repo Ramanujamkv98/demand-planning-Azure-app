@@ -1,5 +1,5 @@
 # =========================================================
-# STREAMLIT APP: Supply Chain Replenishment Assistant with Time Series
+# STREAMLIT APP: Supply Chain Replenishment Dashboard
 # =========================================================
 
 import streamlit as st
@@ -7,9 +7,10 @@ import pandas as pd
 import numpy as np
 import joblib
 import plotly.express as px
+from sklearn.linear_model import LinearRegression
 
 # ---------------------------------------------------------
-# Load model
+# Load trained model
 # ---------------------------------------------------------
 model = joblib.load("replenishment_model.pkl")
 
@@ -24,28 +25,39 @@ def map_qualitative_inputs(criticality, cost, rating):
 
 def business_interpretation(pred):
     if pred < 400:
-        return "✅ Low consumption — maintain standard reorder cycle."
+        return "Low consumption — maintain standard reorder cycle."
     elif pred < 700:
-        return "🟡 Moderate usage — monitor supplier lead time closely."
+        return "Moderate usage — monitor supplier lead time closely."
     else:
-        return "🔴 High demand — prioritize procurement and buffer stock."
+        return "High demand — prioritize procurement and buffer stock."
 
-# Generate synthetic past demand (for demonstration)
 def generate_past_demand(item_id):
-    np.random.seed(int(item_id[-2:]) * 3)  # same pattern for same item
+    np.random.seed(int(item_id[-2:]) * 3)
     months = pd.date_range(end=pd.Timestamp.today(), periods=12, freq="M")
     base = np.random.randint(300, 800)
     variation = np.random.normal(0, 40, 12)
     data = pd.DataFrame({
-        "Month": months.strftime("%b-%Y"),
-        "Past Demand (units)": np.maximum(base + variation, 0).round(0)
+        "Month": months,
+        "Past Demand": np.maximum(base + variation, 0).round(0)
     })
     return data
 
+def forecast_demand(df):
+    # Simple linear regression to forecast next 3 months
+    df = df.reset_index(drop=True)
+    X = np.arange(len(df)).reshape(-1, 1)
+    y = df["Past Demand"]
+    model = LinearRegression().fit(X, y)
+    future_X = np.arange(len(df), len(df) + 3).reshape(-1, 1)
+    forecast = model.predict(future_X)
+    future_months = pd.date_range(df["Month"].iloc[-1] + pd.offsets.MonthBegin(), periods=3, freq="M")
+    forecast_df = pd.DataFrame({"Month": future_months, "Forecasted Demand": forecast})
+    return forecast_df
+
 # ---------------------------------------------------------
-# Streamlit Page Setup
+# Page Configuration
 # ---------------------------------------------------------
-st.set_page_config(page_title="Supply Chain Replenishment Assistant", page_icon="📦", layout="wide")
+st.set_page_config(page_title="Supply Chain Replenishment Dashboard", layout="wide")
 
 st.markdown("""
     <style>
@@ -53,59 +65,54 @@ st.markdown("""
     .main { background-color: #111418; }
     h1, h2, h3, h4, h5 { color: #29b5e8; font-weight: 700; }
     .stButton>button {
-        background-color: #29b5e8; color: white; border: none; border-radius: 8px;
-        padding: 0.6em 1.2em; font-weight: bold; font-size: 16px;
+        background-color: #29b5e8; color: white; border: none; border-radius: 6px;
+        padding: 0.5em 1.2em; font-weight: 600; font-size: 15px;
     }
     .stButton>button:hover { background-color: #1a8bbd; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🏭 Supply Chain Replenishment Assistant")
-st.write("Make smarter replenishment decisions based on historical usage and operational insights — no technical jargon required.")
+st.title("Supply Chain Replenishment Dashboard")
+st.write("A predictive decision-support application for planning semiconductor spare parts replenishment.")
 
 st.divider()
 
 # ---------------------------------------------------------
-# Manager-Friendly Inputs
+# Input Section
 # ---------------------------------------------------------
 col1, col2 = st.columns(2)
 
 with col1:
-    item_id = st.selectbox("Select Material / Part ID", [f"P{str(i).zfill(3)}" for i in range(1, 101)])
+    item_id = st.selectbox("Material / Part ID", [f"P{str(i).zfill(3)}" for i in range(1, 101)])
     past_demand = st.number_input("Recent Monthly Consumption (units)", 50, 2000, 600, step=50)
     lead_time = st.radio("Supplier Delivery Speed", ["Fast", "Average", "Slow"])
-    service = st.radio("Stock Availability Target", ["90% - Basic", "95% - Standard", "99% - Premium"])
+    service = st.radio("Target Service Level", ["90% - Basic", "95% - Standard", "99% - Premium"])
 
 with col2:
     uptime = st.radio("Equipment Reliability", ["Low", "Moderate", "High"])
     seasonality = st.radio("Demand Pattern", ["Stable", "Slightly Seasonal", "Highly Seasonal"])
-    scrap_rate = st.slider("Wastage / Scrap %", 0.0, 0.15, 0.05, step=0.01)
+    scrap_rate = st.slider("Wastage / Scrap (%)", 0.0, 0.15, 0.05, step=0.01)
 
-st.markdown("### Manager Assessment")
+st.markdown("#### Business Inputs")
 criticality = st.radio("Part Importance", ["Low", "Moderate", "High"], horizontal=True)
-cost = st.radio("Cost Sensitivity", ["Low", "Moderate", "High"], horizontal=True)
+cost = st.radio("Cost Category", ["Low", "Moderate", "High"], horizontal=True)
 supplier_rating = st.radio("Supplier Reliability", ["Low", "Moderate", "High"], horizontal=True)
 
 # ---------------------------------------------------------
-# Time Series Demand Visualization
+# Generate Time-Series Chart
 # ---------------------------------------------------------
-st.markdown("### 📈 Historical Consumption Trend")
 past_data = generate_past_demand(item_id)
+forecast_df = forecast_demand(past_data)
+combined = past_data.merge(forecast_df, how="outer", on="Month")
 
 fig = px.line(
-    past_data,
-    x="Month",
-    y="Past Demand (units)",
-    markers=True,
-    line_shape="spline",
-    color_discrete_sequence=["#29b5e8"]
+    combined, x="Month", y=["Past Demand", "Forecasted Demand"],
+    line_shape="spline", markers=True, color_discrete_sequence=["#29b5e8", "#ffaa00"]
 )
 fig.update_layout(
-    title=f"Demand Trend for {item_id} (Last 12 Months)",
-    xaxis_title="Month",
-    yaxis_title="Units Consumed",
-    plot_bgcolor="#111418",
-    paper_bgcolor="#111418",
+    title=f"Historical and Forecasted Demand for {item_id}",
+    xaxis_title="Month", yaxis_title="Units",
+    plot_bgcolor="#111418", paper_bgcolor="#111418",
     font=dict(color="white")
 )
 st.plotly_chart(fig, use_container_width=True)
@@ -113,7 +120,7 @@ st.plotly_chart(fig, use_container_width=True)
 st.divider()
 
 # ---------------------------------------------------------
-# Convert Qualitative Inputs to Numeric
+# Mapping and Prediction Logic
 # ---------------------------------------------------------
 lead_time_map = {"Fast": 7, "Average": 15, "Slow": 30}
 service_map = {"90% - Basic": 90, "95% - Standard": 95, "99% - Premium": 99}
@@ -128,9 +135,10 @@ seasonality_index = seasonality_map[seasonality]
 avg_uptime_percent = uptime_map[uptime]
 
 # ---------------------------------------------------------
-# Prediction Section
+# Business Calculations: Safety Stock and Reorder Point
 # ---------------------------------------------------------
-if st.button("📊 Predict Replenishment Quantity"):
+if st.button("Run Analysis and Predict Replenishment"):
+    # Model prediction
     input_data = pd.DataFrame({
         "past_demand": [past_demand],
         "lead_time_days": [lead_time_days],
@@ -143,10 +151,22 @@ if st.button("📊 Predict Replenishment Quantity"):
         "scrap_rate": [scrap_rate]
     })
 
-    prediction = model.predict(input_data)[0]
+    predicted_qty = model.predict(input_data)[0]
 
-    st.success(f"📦 **Recommended Replenishment Quantity: {round(prediction, 2)} units**")
-    st.info(business_interpretation(prediction))
+    # Safety stock (simplified)
+    demand_std = past_data["Past Demand"].std()
+    z_value = {90: 1.28, 95: 1.65, 99: 2.33}[service_level]
+    safety_stock = z_value * demand_std * np.sqrt(lead_time_days / 30)
+    reorder_point = (past_demand * (lead_time_days / 30)) + safety_stock
+
+    # KPI Summary
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("Predicted Replenishment", f"{round(predicted_qty, 1)} units")
+    kpi2.metric("Safety Stock", f"{round(safety_stock, 1)} units")
+    kpi3.metric("Reorder Point", f"{round(reorder_point, 1)} units")
+
+    st.markdown("#### Business Recommendation")
+    st.write(business_interpretation(predicted_qty))
 
 st.divider()
-st.caption("Developed by Ramanujam • MSBA Candidate, Arizona State University")
+st.caption("Developed by Venkata Ramanujam Kandalam • MSBA Candidate, Arizona State University")
