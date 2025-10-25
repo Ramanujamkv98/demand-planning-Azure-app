@@ -1,5 +1,5 @@
 # =========================================================
-# STREAMLIT APP: Supply Chain Replenishment Dashboard (Final + Confidence Level)
+# STREAMLIT APP: Supply Chain Replenishment Dashboard (Final + Confidence First)
 # =========================================================
 
 import streamlit as st
@@ -112,6 +112,15 @@ cost = st.radio("Cost Category", ["Low", "Moderate", "High"], horizontal=True)
 supplier_rating = st.radio("Supplier Reliability", ["Low", "Moderate", "High"], horizontal=True)
 
 # ---------------------------------------------------------
+# Confidence Level Selection (Before Prediction)
+# ---------------------------------------------------------
+st.divider()
+st.markdown("#### Confidence Level for Safety Stock Calculation")
+confidence_level = st.slider("Set Confidence Level (%)", 80, 99, 95, step=1)
+z_value = round(norm.ppf(confidence_level / 100), 2)
+st.write(f"Selected Confidence Level: **{confidence_level}%** (Z = {z_value})")
+
+# ---------------------------------------------------------
 # Time-Series Demand Visualization
 # ---------------------------------------------------------
 past_data = generate_past_demand(item_id)
@@ -152,13 +161,7 @@ avg_uptime_percent = uptime_map[uptime]
 # Prediction and KPI Calculations
 # ---------------------------------------------------------
 if st.button("Run Analysis and Predict Replenishment"):
-    
-    # Confidence level selector (for safety stock)
-    confidence_level = st.slider("Select Confidence Level for Safety Stock (%)", 80, 99, 95, step=1)
-    z_value = round(norm.ppf(confidence_level / 100), 2)
-    st.write(f"Confidence Level: **{confidence_level}%**,  Z-Value: **{z_value}**")
 
-    # Model Input Data
     input_data = pd.DataFrame({
         "past_demand": [past_demand],
         "lead_time_days": [lead_time_days],
@@ -173,7 +176,7 @@ if st.button("Run Analysis and Predict Replenishment"):
 
     predicted_qty = int(round(model.predict(input_data)[0]))
 
-    # Safety Stock and Reorder Point
+    # Safety Stock and Reorder Point using selected confidence
     demand_std = past_data["Past Demand"].std()
     safety_stock = int(round(z_value * demand_std * np.sqrt(lead_time_days / 30)))
     reorder_point = int(round((past_demand * (lead_time_days / 30)) + safety_stock))
